@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.evalite/
+evalite-report/
+.DS_Store
+.env
+.env.*
+evalite-export/
