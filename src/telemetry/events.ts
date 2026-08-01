@@ -33,9 +33,9 @@ export interface AiRunFailedEvent extends AiRunEventBase {
   retries: number;
 }
 
-export interface AiCacheHitEvent extends AiRunEventBase {
+export interface AiCacheHitEventX extends AiRunEventBase {
   type: 'cache_hit';
   latencyMs: number;
 }
 
-export type AiTelemetryEvent = AiRunCompletedEvent | AiRunFailedEvent | AiCacheHitEvent;
+export type AiTelemetryEvent = AiRunCompletedEvent | AiRunFailedEvent | AiCacheHitEventX;
