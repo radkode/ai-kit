@@ -14,8 +14,9 @@ import {
   AiError,
   AiInputInvalidError,
   AiOutputInvalidError,
+  ProviderOutputError,
 } from '../core/errors.js';
-import { generateStructured, ProviderOutputError } from '../core/provider.js';
+import { generateStructured } from '../core/provider.js';
 import { estimateCostUsd, resolveModel, PRICING_VERSION, type ModelInfo } from '../registry/models.js';
 import { resolveProfile, type Profile } from '../registry/profiles.js';
 import { joinParts, text, type PromptPart } from '../spec/prompt.js';

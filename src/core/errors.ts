@@ -6,6 +6,8 @@
  * caller (and the runner's own retry loop) whether trying again can help.
  */
 
+import type { AiUsage } from './contracts.js';
+
 export type AiErrorCode =
   | 'config'
   | 'input_invalid'
@@ -116,5 +118,20 @@ export class AiDisabledError extends AiError {
   constructor() {
     super('disabled', 'AI is disabled via configuration');
     this.name = 'AiDisabledError';
+  }
+}
+
+/** Raised when the model's output failed schema enforcement; carries salvage material. */
+export class ProviderOutputError extends Error {
+  readonly rawText: string | undefined;
+  readonly issues: unknown;
+  readonly usage: AiUsage;
+
+  constructor(message: string, options: { rawText?: string; issues?: unknown; usage: AiUsage; cause?: unknown }) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.name = 'ProviderOutputError';
+    this.rawText = options.rawText;
+    this.issues = options.issues;
+    this.usage = options.usage;
   }
 }
