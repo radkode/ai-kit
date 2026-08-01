@@ -7,3 +7,6 @@ evalite-report/
 .env
 .env.*
 evalite-export/
+/.api-snapshots/
+/report.json
+/report.md
