@@ -11,7 +11,14 @@ import {
 } from 'ai';
 import type { z } from 'zod';
 import type { AiUsage } from './contracts.js';
-import { AiConfigError, AiError, AiProviderError, AiRateLimitError, AiTimeoutError } from './errors.js';
+import {
+  AiConfigError,
+  AiError,
+  AiProviderError,
+  AiRateLimitError,
+  AiTimeoutError,
+  ProviderOutputError,
+} from './errors.js';
 import type { ModelInfo } from '../registry/models.js';
 import type { Profile } from '../registry/profiles.js';
 import type { PromptPart } from '../spec/prompt.js';
@@ -27,21 +34,6 @@ import type { PromptPart } from '../spec/prompt.js';
  * the default observability signal. Set AI_SDK_TELEMETRY=true to emit AI SDK
  * OTel spans (still metadata-only) into whatever exporter the app configured.
  */
-
-/** Raised when the model's output failed schema enforcement; carries salvage material. */
-export class ProviderOutputError extends Error {
-  readonly rawText: string | undefined;
-  readonly issues: unknown;
-  readonly usage: AiUsage;
-
-  constructor(message: string, options: { rawText?: string; issues?: unknown; usage: AiUsage; cause?: unknown }) {
-    super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = 'ProviderOutputError';
-    this.rawText = options.rawText;
-    this.issues = options.issues;
-    this.usage = options.usage;
-  }
-}
 
 export interface GenerateStructuredArgs<Out> {
   model: ModelInfo;

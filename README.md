@@ -84,6 +84,22 @@ import { toManifest } from '@radkode/ai-kit/spec';
 return Response.json(toManifest(triage, { tools: true, web: false }));
 ```
 
+## Imports
+
+One module, one subpath. There is no root export, so every public symbol has
+exactly one specifier and `from '@radkode/ai-kit'` fails loudly rather than
+becoming a second way to spell the same import.
+
+| Subpath | What lives there |
+| --- | --- |
+| `/spec` | `defineAiTask`, `text`, `xml`, `joinParts`, `toManifest` |
+| `/runner` | `runTask`, `salvageJson`, `runCacheKey`, `stableStringify`, `resetProvider` |
+| `/core` | Typed errors, and the contracts apps implement (`AiBudgetStore`, `AiCache`). No runtime dependencies. |
+| `/registry` | Model metadata, pricing, and named profiles (`resolveModel`, `estimateCostUsd`, `resolveProfile`) |
+| `/telemetry` | Event types |
+| `/eval` | `renderTaskPrompt`, for snapshot tests and Evalite suites |
+| `/adapters/memory`, `/adapters/upstash` | Budget store and cache implementations |
+
 ## Design rules
 
 - Apps never import `ai`, `@ai-sdk/*`, or provider SDKs; ai-kit's provider
@@ -93,6 +109,9 @@ return Response.json(toManifest(triage, { tools: true, web: false }));
 - Prompts are product code: they live in your app as task definitions, not in
   this package and not in a registry service.
 - A changed rendered-prompt snapshot requires a version bump on the definition.
+- One module, one subpath, one specifier. New surface arrives as a new subpath,
+  never as a second way to import surface that already exists. Anything reaching
+  an optional peer dependency stays in `adapters/`.
 
 ## Environment
 

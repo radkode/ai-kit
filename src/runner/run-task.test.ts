@@ -3,7 +3,12 @@ import { demoTriageTask } from '../__fixtures__/demo-task.js';
 import { memoryBudget, memoryCache } from '../adapters/memory.js';
 import type { AiBudgetStore, AiCache } from '../core/contracts.js';
 import type { AiTelemetryEvent } from '../telemetry/events.js';
-import { AiBudgetExceededError, AiInputInvalidError, AiOutputInvalidError } from '../core/errors.js';
+import {
+  AiBudgetExceededError,
+  AiInputInvalidError,
+  AiOutputInvalidError,
+  ProviderOutputError,
+} from '../core/errors.js';
 import { runTask } from './run-task.js';
 
 vi.mock('../core/provider.js', async () => {
@@ -12,7 +17,7 @@ vi.mock('../core/provider.js', async () => {
   return { ...actual, generateStructured: vi.fn(), generatePlainText: vi.fn() };
 });
 
-const { generateStructured, ProviderOutputError } = await import('../core/provider.js');
+const { generateStructured } = await import('../core/provider.js');
 const mockedGenerate = vi.mocked(generateStructured);
 
 const VALID_OUTPUT = {
