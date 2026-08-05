@@ -19,5 +19,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - run: npx --yes @arethetypeswrong/cli --pack . --profile esm-only
+      - run: pnpm check:core-deps
+      - run: npx --yes @arethetypeswrong/cli@0.18.5 --pack . --profile esm-only
       - run: pnpm eval
