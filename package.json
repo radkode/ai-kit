@@ -54,6 +54,7 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "check:core-deps": "node scripts/check-core-deps.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "evalite",
