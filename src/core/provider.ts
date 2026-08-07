@@ -101,7 +101,7 @@ function toUsage(usage: LanguageModelUsage | undefined): AiUsage {
 function sdkTelemetry(taskId: string | undefined) {
   if (process.env.AI_SDK_TELEMETRY !== 'true') return {};
   return {
-    experimental_telemetry: {
+    telemetry: {
       isEnabled: true,
       recordInputs: false,
       recordOutputs: false,
