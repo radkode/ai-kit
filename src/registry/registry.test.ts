@@ -65,4 +65,11 @@ describe('unknown model pricing', () => {
     });
     expect(cost).toBeGreaterThan(0);
   });
+
+  it('never under-prices against the most expensive known model', () => {
+    const unknown = resolveModel('some-future-model');
+    const priciest = resolveModel('claude-fable-5');
+    expect(unknown.inputPerMTok).toBeGreaterThanOrEqual(priciest.inputPerMTok);
+    expect(unknown.outputPerMTok).toBeGreaterThanOrEqual(priciest.outputPerMTok);
+  });
 });
