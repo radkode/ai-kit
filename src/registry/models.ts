@@ -1,17 +1,17 @@
 /**
  * Model registry: metadata, prices, and deprecation routing.
  *
- * Metadata, not an allowlist — an unknown model id still runs (with zero-cost
- * pricing and a telemetry-visible `pricingVersion` of "unknown"), so a newly
- * released model is usable before this table catches up. Deprecated ids route
- * to their replacement so a stale env var never breaks a deploy.
+ * Metadata, not an allowlist. An unknown model id still runs, priced at the
+ * most expensive known tier (see UNKNOWN_MODEL_PRICING), so a newly released
+ * model is usable before this table catches up. Deprecated ids route to their
+ * replacement so a stale env var never breaks a deploy.
  *
  * Pricing is USD per million tokens, from Anthropic's published rates.
  * PRICING_VERSION is stamped into every run's meta so recorded costs stay
  * auditable as prices change.
  */
 
-export const PRICING_VERSION = '2026-07-30';
+export const PRICING_VERSION = '2026-08-06';
 
 export interface ModelInfo {
   id: string;
@@ -22,13 +22,29 @@ export interface ModelInfo {
   outputPerMTok: number;
   /** Multiplier for cache-read tokens (Anthropic bills ~0.1x input). */
   cachedInputMultiplier: number;
-  /** Opus 5 / Sonnet 5 reject the temperature param; the provider layer must omit it. */
+  /** False on models that reject the temperature param; the provider layer must omit it. */
   supportsTemperature: boolean;
   deprecated?: boolean;
   replacement?: string;
 }
 
 const MODELS: Record<string, ModelInfo> = {
+  'claude-fable-5': {
+    id: 'claude-fable-5',
+    provider: 'anthropic',
+    inputPerMTok: 10,
+    outputPerMTok: 50,
+    cachedInputMultiplier: 0.1,
+    supportsTemperature: false,
+  },
+  'claude-mythos-5': {
+    id: 'claude-mythos-5',
+    provider: 'anthropic',
+    inputPerMTok: 10,
+    outputPerMTok: 50,
+    cachedInputMultiplier: 0.1,
+    supportsTemperature: false,
+  },
   'claude-opus-5': {
     id: 'claude-opus-5',
     provider: 'anthropic',
@@ -124,8 +140,8 @@ const MODELS: Record<string, ModelInfo> = {
  * would silently disable USD enforcement for it.
  */
 const UNKNOWN_MODEL_PRICING = {
-  inputPerMTok: 5,
-  outputPerMTok: 25,
+  inputPerMTok: 10,
+  outputPerMTok: 50,
   cachedInputMultiplier: 0.1,
 } as const;
 
