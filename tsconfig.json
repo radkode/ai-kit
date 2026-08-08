@@ -10,6 +10,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    // We set no baseUrl; tsup's dts build injects one, which TS 6 deprecates.
+    "ignoreDeprecations": "6.0",
     "noEmit": true,
     "types": ["node"]
   },
