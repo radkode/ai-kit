@@ -1,6 +1,6 @@
 {
   "name": "@radkode/ai-kit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Building blocks for AI agents in TypeScript apps: task definitions with wire-safe manifests, a provider-wrapped runner with schema-enforced output, two-phase token/dollar budgets, tenant-namespaced caching, metadata-only telemetry, and eval scaffolding.",
   "license": "MIT",
   "repository": {
