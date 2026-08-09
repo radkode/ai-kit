@@ -14,9 +14,8 @@ export default defineConfig({
   format: ['esm'],
   // Keep .js/.d.ts so the package.json exports map stays as-is.
   fixedExtension: false,
-  // Not `dts: true`: that emits the .d.ts sourceMappingURL comment but drops the map.
-  dts: { sourcemap: true },
-  sourcemap: true,
+  dts: true,
+  sourcemap: false,
   clean: true,
   treeshake: true,
 });
