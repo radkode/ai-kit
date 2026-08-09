@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsup';
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: {
@@ -12,10 +12,10 @@ export default defineConfig({
     'adapters/upstash': 'src/adapters/upstash.ts',
   },
   format: ['esm'],
-  // tsup 8 strips `node:` by default; bare 'crypto' breaks Deno and Workers.
-  removeNodeProtocol: false,
+  // Keep .js/.d.ts so the package.json exports map stays as-is.
+  fixedExtension: false,
   dts: true,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   treeshake: true,
 });
