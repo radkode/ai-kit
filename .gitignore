@@ -10,3 +10,4 @@ evalite-export/
 /.api-snapshots/
 /report.json
 /report.md
+.worktrees/

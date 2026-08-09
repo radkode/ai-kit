@@ -39,4 +39,8 @@ jobs:
         with:
           publish: pnpm release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RELEASE_TOKEN, not GITHUB_TOKEN: GitHub suppresses workflow runs on
+          # branches pushed by GITHUB_TOKEN, so `verify` never runs on the release
+          # PR and its required check can never go green. Falls back until the
+          # secret exists; without it, merging the release PR needs admin bypass.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
