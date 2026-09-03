@@ -1,14 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoTriageTask } from '../__fixtures__/demo-task.js';
 import { memoryBudget, memoryCache } from '../adapters/memory.js';
 import type { AiBudgetStore, AiCache } from '../core/contracts.js';
 import type { AiTelemetryEvent } from '../telemetry/events.js';
 import {
   AiBudgetExceededError,
+  AiConfigError,
+  AiDisabledError,
+  AiError,
   AiInputInvalidError,
   AiOutputInvalidError,
+  AiProviderError,
+  AiRateLimitError,
+  AiTimeoutError,
   ProviderOutputError,
 } from '../core/errors.js';
+import { defineAiTask } from '../spec/task.js';
 import { runTask } from './run-task.js';
 
 vi.mock('../core/provider.js', async () => {
@@ -277,5 +284,340 @@ describe('runTask', () => {
     const completed = events.find((e) => e.type === 'run_completed');
     expect(completed).toBeDefined();
     expect(completed && 'content' in completed && completed.content).toBeFalsy();
+  });
+});
+
+describe('runTask kill switch', () => {
+  afterEach(() => {
+    delete process.env.AI_DISABLED;
+  });
+
+  it('throws AiDisabledError from ctx before validating input or spending anything', async () => {
+    await expect(
+      runTask(demoTriageTask, { captureText: '' }, { disabled: true }),
+    ).rejects.toBeInstanceOf(AiDisabledError);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it('honours the AI_DISABLED env var without a ctx flag', async () => {
+    process.env.AI_DISABLED = 'true';
+    await expect(runTask(demoTriageTask, INPUT)).rejects.toBeInstanceOf(AiDisabledError);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it('ignores any AI_DISABLED value other than the literal true', async () => {
+    process.env.AI_DISABLED = '1';
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    await expect(runTask(demoTriageTask, INPUT)).resolves.toBeDefined();
+  });
+});
+
+describe('runTask profile resolution', () => {
+  it('rejects a task pointing at a profile the registry does not have', async () => {
+    const broken = defineAiTask({ ...demoTriageTask, profile: 'nonexistent' });
+    const error = await runTask(broken, INPUT).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AiConfigError);
+    expect((error as AiConfigError).message).toContain('nonexistent');
+    expect((error as AiConfigError).message).toContain('demo.capture-triage');
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it('lets ctx.profileOverride win over the definition default', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const result = await runTask(demoTriageTask, INPUT, { profileOverride: 'deep' });
+
+    expect(result.meta.profile).toBe('deep');
+    expect(result.meta.model).toBe('claude-opus-5');
+    expect(result.meta.fallbackProfile).toBeUndefined();
+  });
+
+  it('rejects an unknown profileOverride rather than silently falling back to the default', async () => {
+    await expect(
+      runTask(demoTriageTask, INPUT, { profileOverride: 'premium' }),
+    ).rejects.toBeInstanceOf(AiConfigError);
+  });
+
+  it('applies definition overrides to the profile handed to the provider', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const tuned = defineAiTask({
+      ...demoTriageTask,
+      overrides: { temperature: 0.9, maxOutputTokens: 77, timeoutMs: 1234, maxRetries: 5 },
+    });
+
+    await runTask(tuned, INPUT);
+
+    expect(mockedGenerate.mock.calls[0]![0].profile).toMatchObject({
+      temperature: 0.9,
+      maxOutputTokens: 77,
+      timeoutMs: 1234,
+      maxRetries: 5,
+    });
+  });
+});
+
+describe('runTask declared fallback profile', () => {
+  const withFallback = defineAiTask({
+    ...demoTriageTask,
+    id: 'demo.capture-triage-fallback',
+    fallbackProfile: 'balanced',
+  });
+
+  it('never makes a second attempt when no fallback is declared', async () => {
+    mockedGenerate.mockRejectedValue(new AiRateLimitError('rate limited'));
+    await expect(runTask(demoTriageTask, INPUT)).rejects.toBeInstanceOf(AiRateLimitError);
+    expect(mockedGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the declared fallback on a provider failure and records that it did', async () => {
+    mockedGenerate
+      .mockRejectedValueOnce(new AiRateLimitError('rate limited'))
+      .mockResolvedValueOnce({ output: VALID_OUTPUT, usage: USAGE });
+
+    const result = await runTask(withFallback, INPUT);
+
+    expect(result.output).toEqual(VALID_OUTPUT);
+    expect(result.meta.profile).toBe('balanced');
+    expect(result.meta.model).toBe('claude-sonnet-5');
+    expect(result.meta.fallbackProfile).toBe('balanced');
+  });
+
+  it('accumulates the failed attempt spend into the recorded usage and cost', async () => {
+    mockedGenerate
+      .mockRejectedValueOnce(new ProviderOutputError('invalid', { rawText: 'nope', usage: USAGE }))
+      .mockRejectedValueOnce(new ProviderOutputError('invalid', { rawText: 'nope', usage: USAGE }))
+      .mockResolvedValueOnce({ output: VALID_OUTPUT, usage: USAGE });
+
+    const result = await runTask(withFallback, INPUT);
+
+    // Primary call, its paid repair, then the fallback: three calls, all billed.
+    expect(mockedGenerate).toHaveBeenCalledTimes(3);
+    expect(result.meta.usage.inputTokens).toBe(USAGE.inputTokens * 3);
+    expect(result.meta.fallbackProfile).toBe('balanced');
+  });
+
+  it('does not fall back when the failure is the tenant running out of budget', async () => {
+    const store = memoryBudget();
+    await expect(
+      runTask(withFallback, INPUT, {
+        budget: { store, key: 'k', limit: { tokens: 1, usd: 0.000001 } },
+      }),
+    ).rejects.toBeInstanceOf(AiBudgetExceededError);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it('gates the fallback on the error code, not merely on a fallback being declared', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const inner = memoryBudget();
+    let reserves = 0;
+    // Denies the primary attempt only; a fallback attempt would be granted.
+    const store: AiBudgetStore = {
+      reserve: async (key, amount, limit) => {
+        reserves += 1;
+        return reserves === 1 ? null : inner.reserve(key, amount, limit);
+      },
+      settle: (r, a) => inner.settle(r, a),
+      release: (r) => inner.release(r),
+    };
+
+    await expect(
+      runTask(withFallback, INPUT, {
+        budget: { store, key: 'k', limit: { tokens: 100_000, usd: 1 } },
+      }),
+    ).rejects.toBeInstanceOf(AiBudgetExceededError);
+
+    // Running out of budget is not a provider failure, so no second attempt.
+    expect(reserves).toBe(1);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it('falls back on a non-retryable provider error, since another model may accept the call', async () => {
+    mockedGenerate
+      .mockRejectedValueOnce(new AiProviderError('bad request', { statusCode: 400, retryable: false }))
+      .mockResolvedValueOnce({ output: VALID_OUTPUT, usage: USAGE });
+
+    const result = await runTask(withFallback, INPUT);
+    expect(result.meta.fallbackProfile).toBe('balanced');
+  });
+
+  it('throws the fallback failure and reports both attempts when the fallback fails too', async () => {
+    mockedGenerate
+      .mockRejectedValueOnce(new AiRateLimitError('primary rate limited'))
+      .mockRejectedValueOnce(new AiTimeoutError('fallback timed out'));
+    const events: AiTelemetryEvent[] = [];
+
+    const error = await runTask(withFallback, INPUT, {
+      telemetry: (e) => events.push(e),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AiTimeoutError);
+    const failures = events.filter((e) => e.type === 'run_failed');
+    expect(failures).toHaveLength(2);
+    expect(failures.map((e) => e.profile)).toEqual(['fast-structured', 'balanced']);
+  });
+
+  it('keeps fallback output out of the cache, so it cannot poison later primary runs', async () => {
+    const cache = memoryCache();
+    const setSpy = vi.spyOn(cache, 'set');
+    mockedGenerate
+      .mockRejectedValueOnce(new AiRateLimitError('rate limited'))
+      .mockResolvedValueOnce({ output: VALID_OUTPUT, usage: USAGE });
+
+    const fallbackRun = await runTask(withFallback, INPUT, { cache });
+    expect(fallbackRun.meta.fallbackProfile).toBe('balanced');
+    expect(setSpy).not.toHaveBeenCalled();
+
+    // A primary-served run does write, so the check above is not vacuous.
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    await runTask(withFallback, INPUT, { cache });
+    expect(setSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('runTask error coercion', () => {
+  it('wraps an unrecognized throw as a provider AiError naming the task', async () => {
+    const raw = new Error('something exploded');
+    mockedGenerate.mockRejectedValue(raw);
+
+    const error = await runTask(demoTriageTask, INPUT).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AiError);
+    expect((error as AiError).code).toBe('provider');
+    expect((error as AiError).message).toContain('demo.capture-triage');
+    expect((error as AiError).cause).toBe(raw);
+  });
+
+  it('wraps a thrown non-Error value too', async () => {
+    mockedGenerate.mockRejectedValue('a bare string');
+    const error = await runTask(demoTriageTask, INPUT).catch((e: unknown) => e);
+    expect((error as AiError).code).toBe('provider');
+    expect((error as AiError).message).toContain('a bare string');
+  });
+
+  it('propagates a non-schema, non-typed failure from the repair call unwrapped', async () => {
+    mockedGenerate
+      .mockRejectedValueOnce(new ProviderOutputError('invalid', { rawText: 'nope', usage: USAGE }))
+      .mockRejectedValueOnce(new Error('socket hang up during repair'));
+
+    const error = await runTask(demoTriageTask, INPUT).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AiError);
+    expect((error as AiError).code).toBe('provider');
+    expect((error as AiError).message).toContain('socket hang up during repair');
+  });
+});
+
+describe('runTask budget store outages', () => {
+  const failingReserve: AiBudgetStore = {
+    reserve: async () => {
+      throw new Error('metering infrastructure down');
+    },
+    settle: async () => {},
+    release: async () => {},
+  };
+
+  it('distinguishes a broken meter from an exhausted budget', async () => {
+    const error = await runTask(demoTriageTask, INPUT, {
+      budget: { store: failingReserve, key: 'k', limit: { tokens: 100_000, usd: 1 } },
+    }).catch((e: unknown) => e);
+
+    // The caller degrades differently for "out of money" than for "meter is down".
+    expect(error).toBeInstanceOf(AiError);
+    expect(error).not.toBeInstanceOf(AiBudgetExceededError);
+    expect((error as AiError).code).toBe('provider');
+    expect((error as AiError).retryable).toBe(true);
+    expect(mockedGenerate).not.toHaveBeenCalled();
+  });
+
+  it('does not let a failing release mask the real error', async () => {
+    mockedGenerate.mockRejectedValue(new AiRateLimitError('rate limited'));
+    const inner = memoryBudget();
+    const store: AiBudgetStore = {
+      reserve: (key, amount, limit) => inner.reserve(key, amount, limit),
+      settle: (r, a) => inner.settle(r, a),
+      release: async () => {
+        throw new Error('release failed');
+      },
+    };
+
+    await expect(
+      runTask(demoTriageTask, INPUT, {
+        budget: { store, key: 'k', limit: { tokens: 100_000, usd: 1 } },
+      }),
+    ).rejects.toBeInstanceOf(AiRateLimitError);
+  });
+
+  it('runs without consulting any store when no budget is configured', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const result = await runTask(demoTriageTask, INPUT, {});
+    expect(result.output).toEqual(VALID_OUTPUT);
+  });
+});
+
+describe('runTask telemetry content opt-in', () => {
+  it('records the rendered prompt and output only when the task asks for it', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const recording = defineAiTask({ ...demoTriageTask, telemetry: { recordContent: true } });
+    const events: AiTelemetryEvent[] = [];
+
+    await runTask(recording, INPUT, { telemetry: (e) => events.push(e) });
+
+    const completed = events.find((e) => e.type === 'run_completed');
+    expect(completed?.content?.prompt).toContain('You triage captured task text');
+    expect(completed?.content?.prompt).toContain(INPUT.captureText);
+    expect(completed?.content?.output).toBe(JSON.stringify(VALID_OUTPUT));
+  });
+
+  it('carries the subject ids on every event when a subject is present', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const events: AiTelemetryEvent[] = [];
+
+    await runTask(demoTriageTask, INPUT, {
+      subject: { tenantId: 'tenant-a', userId: 'user-1' },
+      telemetry: (e) => events.push(e),
+    });
+
+    expect(events[0]).toMatchObject({ tenantId: 'tenant-a', userId: 'user-1' });
+  });
+
+  it('omits subject ids entirely rather than emitting undefined values', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const events: AiTelemetryEvent[] = [];
+
+    await runTask(demoTriageTask, INPUT, { telemetry: (e) => events.push(e) });
+
+    expect(events[0]).toBeDefined();
+    expect(Object.keys(events[0]!)).not.toContain('tenantId');
+    expect(Object.keys(events[0]!)).not.toContain('userId');
+  });
+});
+
+describe('runTask cache revalidation', () => {
+  it('treats a cached entry that no longer matches the output schema as a miss', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    // The version-skew case: valid JSON, but shaped for an older output schema.
+    const stale: AiCache = {
+      get: async () => JSON.stringify({ headline: 'old shape', urgency: 9 }),
+      set: async () => {},
+    };
+
+    const result = await runTask(demoTriageTask, INPUT, { cache: stale });
+
+    expect(result.output).toEqual(VALID_OUTPUT);
+    expect(result.meta.cached).toBe(false);
+    expect(mockedGenerate).toHaveBeenCalledOnce();
+  });
+
+  it('never touches the cache for a task that declares no cache policy', async () => {
+    mockedGenerate.mockResolvedValue({ output: VALID_OUTPUT, usage: USAGE });
+    const { cache: _cachePolicy, ...noCachePolicy } = demoTriageTask;
+    const uncached = defineAiTask(noCachePolicy);
+    const cache = memoryCache();
+    const getSpy = vi.spyOn(cache, 'get');
+    const setSpy = vi.spyOn(cache, 'set');
+
+    await runTask(uncached, INPUT, { cache });
+
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(setSpy).not.toHaveBeenCalled();
   });
 });

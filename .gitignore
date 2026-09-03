@@ -11,3 +11,4 @@ evalite-export/
 /report.json
 /report.md
 .worktrees/
+coverage/
