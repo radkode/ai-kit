@@ -58,7 +58,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "evalite",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "test:coverage": "vitest run --coverage"
   },
   "publishConfig": {
     "access": "public"
@@ -80,10 +81,12 @@
     "@changesets/cli": "^2.31.1",
     "@types/node": "^24.0.0",
     "@upstash/redis": "^1.35.0",
+    "@vitest/coverage-v8": "4.1.10",
     "evalite": "^0.19.0",
     "tsdown": "0.22.14",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
+    "wasmoon": "^1.16.0",
     "zod": "^4.4.3"
   }
 }
