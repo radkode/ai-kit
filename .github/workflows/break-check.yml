@@ -1,7 +1,11 @@
 name: API Check
 
 on:
+  # labeled/unlabeled are not in the default activity set, and without them
+  # applying the acknowledgement label would leave the check red until the next
+  # push. One click has to be enough.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -19,7 +23,12 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # An intentional break lands by applying the `breaking-change` label, which
+      # turns this check green. Nothing to commit and nothing to prune later, and
+      # the label is the record of who decided. Red therefore means "a break
+      # nobody has acknowledged" rather than "this PR touched the API", which is
+      # the only reading that survives being a required check.
       - uses: clerk/break-check@92be9cc726c848b9567c7b869e9b11dc761ddd6e # v1 = v0.6.0
         with:
           break-check-version: '0.6.0'
-          fail-on-breaking: true
+          fail-on-breaking: ${{ !contains(github.event.pull_request.labels.*.name, 'breaking-change') }}
