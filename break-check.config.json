@@ -1,7 +1,14 @@
 {
-  "packages": ["."],
+  "packages": [
+    "."
+  ],
   "snapshotDir": ".api-snapshots",
   "mainBranch": "main",
   "checkVersionBump": false,
-  "outputFormat": "markdown"
+  "outputFormat": "markdown",
+  "acknowledgedChanges": [
+    "AiRunEventBase",
+    "AiRunEventBase.userId",
+    "*"
+  ]
 }

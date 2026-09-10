@@ -15,7 +15,8 @@ export interface AiRunEventBase {
   model: string;
   provider: string;
   tenantId?: string;
-  userId?: string;
+  /** Required as of this (deliberately breaking) probe change. */
+  userId: string;
 }
 
 export interface AiRunCompletedEvent extends AiRunEventBase {
