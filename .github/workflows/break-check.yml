@@ -32,3 +32,12 @@ jobs:
         with:
           break-check-version: '0.6.0'
           fail-on-breaking: ${{ !contains(github.event.pull_request.labels.*.name, 'breaking-change') }}
+          # Read break-check.config.json from the base ref, so a PR cannot clear
+          # its own break by editing the config it is judged against: adding to
+          # acknowledgedChanges, widening ignoreSubpaths or resolvableSpecifiers,
+          # or dropping the package. That was a footnote while this check was
+          # advisory and is a way around a required gate now. The label is meant
+          # to be the only acknowledgement, and it leaves a record of who applied
+          # it; a config entry merges quietly and keeps suppressing that symbol
+          # until someone prunes it.
+          policy-mode: true
