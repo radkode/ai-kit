@@ -135,6 +135,11 @@ Releases: changesets on `main`. The release workflow publishes via npm trusted
 publishing (OIDC, provenance attestations, no tokens in CI). The npm-side
 trusted publisher is pinned to `.github/workflows/release.yml` in this repo.
 
+Breaking changes: `API Check` diffs the public API of every PR and is a required
+check. To land an intentional break, apply the `breaking-change` label; the check
+re-runs on the label and goes green. Nothing to commit, and nothing to prune once
+it merges. Red means a break nobody has acknowledged yet.
+
 ## License
 
 MIT
